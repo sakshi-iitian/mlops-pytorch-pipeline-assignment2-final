@@ -1,63 +1,102 @@
 # MLOps PyTorch Pipeline
 
-A complete MLOps pipeline for training and serving a PyTorch CIFAR-10 image classification model using Docker and Kubernetes.
+A production-style MLOps pipeline for training and serving a PyTorch CIFAR-10 image classification model using Docker and Kubernetes.
+
+## Project Overview
+
+This project demonstrates the complete ML deployment lifecycle:
+
+**PyTorch Model → Docker → Kubernetes Training Job → Persistent Storage → Model Serving → Health Checks → Service → HPA → Prediction**
+
+The pipeline includes:
+
+* PyTorch ResNet-18 image classifier
+* CIFAR-10 dataset
+* Config-driven training
+* JSON-line training metrics
+* Model checkpointing
+* Early stopping support
+* Docker training image
+* Docker serving image
+* Kubernetes training Job
+* Kubernetes PersistentVolumeClaims
+* Kubernetes ConfigMap
+* Kubernetes Deployment
+* Kubernetes Service
+* Liveness and readiness probes
+* Horizontal Pod Autoscaler
+* FastAPI prediction API
 
 ## Architecture
 
 ```text
-                         ┌──────────────────────┐
-                         │     Client/User      │
-                         └──────────┬───────────┘
-                                    │
-                              HTTP / Predict
-                                    │
-                                    ▼
-                         ┌──────────────────────┐
-                         │ Kubernetes Service   │
-                         │    ClusterIP :80     │
-                         └──────────┬───────────┘
+                         ┌─────────────────────┐
+                         │       Client        │
+                         │   curl / API call   │
+                         └──────────┬──────────┘
                                     │
                                     ▼
-                     ┌────────────────────────────┐
-                     │  Model Serving Deployment  │
-                     │        2 Replicas           │
-                     │        FastAPI :8080        │
-                     └─────────────┬──────────────┘
-                                   │
-                                   ▼
-                         ┌──────────────────────┐
-                         │ PyTorch Checkpoint   │
-                         │   classifier_v1.pt   │
-                         └──────────────────────┘
-                                   ▲
-                                   │
-                         Model Storage PVC
-                                   │
-                    ┌──────────────┴──────────────┐
-                    │                             │
-                    │ Kubernetes Training Job     │
-                    │                             │
-                    │ PyTorch + CIFAR-10          │
-                    └──────────────┬──────────────┘
-                                   │
-                         Training ConfigMap
-                                   │
-                                   ▼
-                         Training Configuration
+                         ┌─────────────────────┐
+                         │ Kubernetes Service  │
+                         │    ClusterIP :80    │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │     Model Serving Deployment  │
+                    │                               │
+                    │   ┌─────────┐   ┌─────────┐  │
+                    │   │ Pod 1   │   │ Pod 2   │  │
+                    │   │ FastAPI │   │ FastAPI │  │
+                    │   └────┬────┘   └────┬────┘  │
+                    └────────┼──────────────┼───────┘
+                             │              │
+                             └──────┬───────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │ Model Checkpoint    │
+                         │ classifier_v1.pt    │
+                         │ Persistent Volume   │
+                         └──────────▲──────────┘
+                                    │
+                                    │ saves checkpoint
+                                    │
+                         ┌──────────┴──────────┐
+                         │ Kubernetes Training │
+                         │        Job          │
+                         └──────────▲──────────┘
+                                    │
+                                    │ configuration
+                                    │
+                         ┌──────────┴──────────┐
+                         │      ConfigMap      │
+                         │ training_config.yaml│
+                         └─────────────────────┘
+
+                         ┌─────────────────────┐
+                         │        HPA          │
+                         │   2 → 5 replicas    │
+                         │    CPU target 70%   │
+                         └─────────────────────┘
 ```
 
-## Project Structure
+## Repository Structure
 
 ```text
-.
+mlops-pytorch-pipeline-assignment2-final/
+│
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
+│
 ├── configs/
 │   └── training_config.yaml
+│
 ├── docker/
 │   ├── Dockerfile.train
 │   └── Dockerfile.serve
+│
 ├── k8s/
 │   ├── namespace.yaml
 │   ├── configmap.yaml
@@ -66,74 +105,125 @@ A complete MLOps pipeline for training and serving a PyTorch CIFAR-10 image clas
 │   ├── serving-deployment.yaml
 │   ├── serving-service.yaml
 │   └── hpa.yaml
+│
 ├── requirements/
 │   ├── train.txt
 │   └── serve.txt
+│
 ├── src/
 │   ├── __init__.py
 │   ├── dataset.py
 │   ├── model.py
 │   ├── train.py
 │   └── serve.py
-└── tests/
-    └── test_model.py
+│
+├── tests/
+│   └── test_model.py
+│
+├── .gitignore
+└── README.md
 ```
-
-## Model
-
-The project uses a ResNet-18 based PyTorch image classifier trained on the CIFAR-10 dataset.
-
-The training pipeline:
-
-* Downloads and loads the CIFAR-10 dataset.
-* Applies training and validation transforms.
-* Reads hyperparameters from `configs/training_config.yaml`.
-* Trains the model using PyTorch.
-* Logs training and validation metrics as JSON lines.
-* Saves the best model checkpoint.
-* Supports early stopping.
-* Stores the trained model in the configured checkpoint directory.
 
 ## Local Setup
 
-Create and activate a Python virtual environment:
+Clone the repository:
+
+```bash
+git clone https://github.com/sakshi-iitian/mlops-pytorch-pipeline-assignment2-final.git
+cd mlops-pytorch-pipeline-assignment2-final
+```
+
+Create a Python virtual environment:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Install the training dependencies:
+Install training dependencies:
 
 ```bash
 pip install -r requirements/train.txt
 ```
 
-Run training:
+Run training locally:
 
 ```bash
 python3 src/train.py
 ```
 
-The training configuration is read from:
+The training script reads the configuration from:
 
 ```text
 configs/training_config.yaml
 ```
 
-The trained checkpoint is saved according to the output configuration.
+The trained checkpoint is saved to:
+
+```text
+checkpoints/classifier_v1.pt
+```
+
+## Model
+
+The project uses a ResNet-18 based image classifier trained on the CIFAR-10 dataset.
+
+The ten CIFAR-10 classes are:
+
+```text
+airplane
+automobile
+bird
+cat
+deer
+dog
+frog
+horse
+ship
+truck
+```
+
+## Training Configuration
+
+Training parameters are stored in:
+
+```text
+configs/training_config.yaml
+```
+
+Example configuration:
+
+```yaml
+model:
+  architecture: resnet18
+  num_classes: 10
+
+training:
+  epochs: 10
+  batch_size: 64
+  learning_rate: 0.001
+  early_stopping_patience: 3
+
+data:
+  dataset: cifar10
+  data_dir: /app/data
+
+output:
+  checkpoint_dir: /app/checkpoints
+  model_name: classifier_v1.pt
+```
+
+The Kubernetes training Job mounts the configuration using a ConfigMap.
 
 ## Docker
 
-### Training Image
-
-Build the training image:
+### Build Training Image
 
 ```bash
 docker build -f docker/Dockerfile.train -t mlops-train:v1 .
 ```
 
-Run training with mounted data and checkpoint directories:
+### Run Training Container
 
 ```bash
 docker run --rm \
@@ -142,15 +232,13 @@ docker run --rm \
   mlops-train:v1
 ```
 
-### Serving Image
-
-Build the serving image:
+### Build Serving Image
 
 ```bash
 docker build -f docker/Dockerfile.serve -t mlops-serve:v1 .
 ```
 
-Run the serving container:
+### Run Serving Container
 
 ```bash
 docker run --rm \
@@ -159,13 +247,17 @@ docker run --rm \
   mlops-serve:v1
 ```
 
-## Serving API
+## FastAPI Serving API
 
-The serving application is implemented using FastAPI.
+The model serving application is implemented using FastAPI.
 
-### Health Check
+### Health Endpoint
 
-Check whether the model is loaded:
+```text
+GET /health
+```
+
+Test:
 
 ```bash
 curl http://localhost:8080/health
@@ -180,140 +272,127 @@ Expected response:
 }
 ```
 
-### Prediction
+### Prediction Endpoint
 
-Send an image to the prediction endpoint:
+```text
+POST /predict
+```
+
+Send an image:
 
 ```bash
 curl -X POST http://localhost:8080/predict \
   -F "image=@test_image.png"
 ```
 
-The endpoint returns:
+Example response:
 
-* Predicted CIFAR-10 class
-* Class index
-* Probability for each CIFAR-10 class
+```json
+{
+  "predicted_class": "frog",
+  "class_index": 6
+}
+```
+
+The API also returns probabilities for all ten CIFAR-10 classes.
 
 ## Kubernetes Deployment
 
-Create the namespace:
+The Kubernetes deployment uses the `ml-training` namespace.
+
+### 1. Create Namespace
 
 ```bash
 kubectl apply -f k8s/namespace.yaml
 ```
 
-Apply the training configuration:
+### 2. Apply Configuration
 
 ```bash
 kubectl apply -f k8s/configmap.yaml
 ```
 
-Create the persistent storage:
+### 3. Create Persistent Storage
 
 ```bash
 kubectl apply -f k8s/pvc.yaml
 ```
 
-Start the Kubernetes training Job:
+### 4. Run Training Job
 
 ```bash
 kubectl apply -f k8s/training-job.yaml
 ```
 
-Check the training Job:
+Check the Job:
 
 ```bash
 kubectl get jobs -n ml-training
 ```
 
-Check the pods:
-
-```bash
-kubectl get pods -n ml-training
-```
-
-View training logs:
+Check training logs:
 
 ```bash
 kubectl logs job/model-training -n ml-training
 ```
 
-After the training Job completes, deploy the model-serving layer:
+### 5. Deploy Model Serving
+
+After training completes:
 
 ```bash
 kubectl apply -f k8s/serving-deployment.yaml
+```
+
+Create the Service:
+
+```bash
 kubectl apply -f k8s/serving-service.yaml
+```
+
+### 6. Enable Autoscaling
+
+```bash
 kubectl apply -f k8s/hpa.yaml
 ```
 
-## Kubernetes Validation
+## Kubernetes Verification
 
-### Check Training Job
-
-```bash
-kubectl get jobs -n ml-training
-```
-
-Expected result:
-
-```text
-NAME             STATUS     COMPLETIONS
-model-training   Complete   1/1
-```
-
-### Check Pods
+Check Pods:
 
 ```bash
 kubectl get pods -n ml-training
 ```
 
-The serving pods should be running and ready.
-
-### Check Persistent Storage
+Check PersistentVolumeClaims:
 
 ```bash
 kubectl get pvc -n ml-training
 ```
 
-The following PVCs should be `Bound`:
-
-```text
-data-storage-pvc
-model-storage-pvc
-```
-
-### Check Deployment
+Check Deployment:
 
 ```bash
 kubectl get deployment model-serving -n ml-training
 ```
 
-The deployment is configured to run two replicas.
-
-### Check Service
+Check Service:
 
 ```bash
 kubectl get svc model-serving -n ml-training
 ```
 
-The model-serving Service uses `ClusterIP` and exposes port `80`.
-
-### Check HPA
+Check HPA:
 
 ```bash
 kubectl get hpa model-serving-hpa -n ml-training
 ```
 
-The HPA is configured with:
-
-* Minimum replicas: 2
-* Maximum replicas: 5
-* CPU target: 70%
-
 ## Port Forwarding
 
-For local testing of the Kubernetes Service:
+The Kubernetes Service is a ClusterIP service.
+
+Forward the service to localhost:
 
 ```bash
 kubectl port-forward svc/model-serving 8080:80 -n ml-training
@@ -325,49 +404,118 @@ Then test the health endpoint:
 curl http://localhost:8080/health
 ```
 
-Test the prediction endpoint:
+Test prediction:
 
 ```bash
 curl -X POST http://localhost:8080/predict \
   -F "image=@test_image.png"
 ```
 
-## End-to-End Validation
+## Kubernetes Resources
 
-The complete Kubernetes workflow was successfully validated.
+### Training Job
 
-### Training
-
-* Kubernetes Job: `model-training`
-* Status: `Complete`
-* Completion: `1/1`
-* Training epochs: `10`
-* Best validation accuracy: `77.38%`
-* Best validation loss: `0.6554`
+```text
+Job: model-training
+Status: Complete
+Completions: 1/1
+```
 
 ### Model Serving
 
-* Deployment: `model-serving`
-* Replicas: `2/2`
-* Serving pods: `Running`
-* Service type: `ClusterIP`
-* Service port: `80`
+```text
+Deployment: model-serving
+Replicas: 2/2
+```
+
+Both serving Pods were successfully running.
 
 ### Persistent Storage
 
-* `data-storage-pvc`: `Bound`, 10Gi
-* `model-storage-pvc`: `Bound`, 10Gi
+```text
+data-storage-pvc   Bound   10Gi
+model-storage-pvc  Bound   10Gi
+```
 
-### Autoscaling
+### Service
 
-* HPA: `model-serving-hpa`
-* Minimum replicas: `2`
-* Maximum replicas: `5`
-* CPU target: `70%`
+```text
+Service: model-serving
+Type: ClusterIP
+Port: 80
+Target Port: 8080
+```
 
-### Health Check
+### Horizontal Pod Autoscaler
 
-The serving API returned:
+```text
+HPA: model-serving-hpa
+Minimum replicas: 2
+Maximum replicas: 5
+CPU target: 70%
+```
+
+## Training Results
+
+The Kubernetes training Job completed successfully after 10 epochs.
+
+Final training metrics:
+
+```text
+Epoch: 10
+Train loss: 0.6362
+Train accuracy: 0.7814
+Validation loss: 0.6554
+Validation accuracy: 0.7738
+```
+
+Best validation accuracy:
+
+```text
+77.38%
+```
+
+Best validation loss:
+
+```text
+0.6554
+```
+
+The trained checkpoint was saved as:
+
+```text
+classifier_v1.pt
+```
+
+## End-to-End Validation
+
+The complete workflow was successfully tested:
+
+```text
+PyTorch Training
+       ↓
+Docker Training Image
+       ↓
+Kubernetes Training Job
+       ↓
+PersistentVolumeClaim
+       ↓
+Model Checkpoint
+       ↓
+Kubernetes Serving Deployment
+       ↓
+FastAPI
+       ↓
+ClusterIP Service
+       ↓
+Health Check
+       ↓
+Prediction
+       ↓
+HPA Autoscaling
+```
+
+Example successful health response:
 
 ```json
 {
@@ -376,45 +524,42 @@ The serving API returned:
 }
 ```
 
-### Prediction
-
-The `/predict` endpoint was successfully tested using `test_image.png`.
-
-Example result:
+Example prediction result:
 
 ```text
-predicted_class: frog
-class_index: 6
-probability: 93.01%
-```
-
-The API also returned probabilities for all 10 CIFAR-10 classes.
-
-## Testing
-
-Run the model tests with:
-
-```bash
-pytest tests/
+Predicted class: frog
+Class index: 6
+Probability: 93.01%
 ```
 
 ## Git Workflow
 
 The project follows a feature-branch and Pull Request workflow.
 
-Development work was performed on feature branches and merged into the `develop` branch through Pull Requests.
+All feature work was developed on feature branches and merged through Pull Requests.
 
-The final `develop` branch was then merged into `main` through the final Pull Request.
-
-Merged Pull Requests cover:
+The project contains Pull Requests covering:
 
 1. PyTorch CIFAR-10 training pipeline
-2. Docker training and serving images
-3. Kubernetes training Job configuration
+2. Docker training and serving containers
+3. Kubernetes training Job
 4. Kubernetes model serving and autoscaling
-5. Final end-to-end PyTorch Kubernetes deployment and validation
+5. End-to-end deployment validation
+6. Final project integration
 
-## Technologies
+All required feature work was merged into the `develop` branch before the final deployment was merged into `main`.
+
+## CI
+
+GitHub Actions is configured through:
+
+```text
+.github/workflows/ci.yml
+```
+
+The workflow runs automated project checks when changes are pushed or Pull Requests are created.
+
+## Technologies Used
 
 * Python
 * PyTorch
@@ -422,34 +567,36 @@ Merged Pull Requests cover:
 * FastAPI
 * Docker
 * Kubernetes
+* kubectl
 * PersistentVolumeClaims
 * ConfigMaps
 * Horizontal Pod Autoscaler
+* Git
 * GitHub Actions
-* Git/GitHub
+* CIFAR-10
 
-## End-to-End Workflow
+## Assignment Requirements Covered
 
-```text
-PyTorch Model
-      ↓
-CIFAR-10 Training
-      ↓
-Docker Training Image
-      ↓
-Kubernetes Training Job
-      ↓
-PersistentVolumeClaim
-      ↓
-Saved PyTorch Checkpoint
-      ↓
-Kubernetes Model Serving
-      ↓
-FastAPI
-      ↓
-ClusterIP Service
-      ↓
-Health Check / Prediction
-      ↓
-Horizontal Pod Autoscaler
-```
+| Requirement              | Status    |
+| ------------------------ | --------- |
+| PyTorch image classifier | Completed |
+| CIFAR-10 dataset         | Completed |
+| Config-driven training   | Completed |
+| JSON training metrics    | Completed |
+| Model checkpointing      | Completed |
+| Early stopping support   | Completed |
+| Docker training image    | Completed |
+| Docker serving image     | Completed |
+| Kubernetes Training Job  | Completed |
+| PersistentVolumeClaims   | Completed |
+| ConfigMap                | Completed |
+| Kubernetes Deployment    | Completed |
+| Two serving replicas     | Completed |
+| Health probes            | Completed |
+| ClusterIP Service        | Completed |
+| HPA                      | Completed |
+| End-to-end prediction    | Completed |
+| Git feature branches     | Completed |
+| Pull Request workflow    | Completed |
+| CI workflow              | Completed |
+| README documentation     | Completed |
