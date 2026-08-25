@@ -20,4 +20,6 @@ jobs:
           pip install -r requirements/train.txt
           pip install pytest
       - name: Run tests
+        env:
+          PYTHONPATH: .
         run: pytest -q
